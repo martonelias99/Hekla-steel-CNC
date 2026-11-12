@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hekla Steel - Cloud Sync</title>
+    <title>Hekla Steel</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans p-4">
@@ -11,16 +11,13 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-6 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-amber-400">🔥 Hekla Steel</h1>
-                <p class="text-sm text-slate-400">Sincronizat Cloud (JSONBin) &bull; <span id="syncStatus" class="text-amber-500 font-semibold">Neconfigurat</span></p>
+                <p class="text-sm text-slate-400">Status Cloud: <span id="syncStatus" class="text-amber-500 font-semibold">Se conectează...</span></p>
             </div>
             <div class="flex flex-wrap gap-2 w-full md:w-auto">
-                <button onclick="syncFromCloud()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-semibold transition">
+                <button onclick="syncFromCloud()" class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
                     🔄 Sincronizează
                 </button>
-                <button onclick="openSettingsModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg text-sm font-semibold transition">
-                    ⚙️ Setări Cloud
-                </button>
-                <button onclick="openModal()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm shadow transition">
+                <button onclick="openModal()" class="flex-1 md:flex-none bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm shadow transition">
                     + Adaugă Comandă
                 </button>
             </div>
@@ -87,97 +84,32 @@
         </div>
     </div>
 
-    <!-- Modal Setări Cloud -->
-    <div id="settingsModal" class="fixed inset-0 bg-black/70 hidden items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <h2 class="text-xl font-bold mb-4 text-amber-400">Setări Sincronizare Cloud</h2>
-            <p class="text-xs text-slate-400 mb-4">Introdu datele de pe <a href="https://jsonbin.io" target="_blank" class="text-amber-400 underline">jsonbin.io</a> pentru a partaja baza de date între laptop și telefon.</p>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs uppercase text-slate-400 mb-1">JSONBin Master Key ($2a$10$...)</label>
-                    <input type="password" id="apiKeyInput" placeholder="Introdu cheia ta API" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500">
-                </div>
-                <div>
-                    <label class="block text-xs uppercase text-slate-400 mb-1">Bin ID (Lăsați gol la prima utilizare)</label>
-                    <input type="text" id="binIdInput" placeholder="ID-ul binned-ului existent" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500">
-                </div>
-                <div class="flex justify-end gap-3 pt-2">
-                    <button type="button" onclick="closeSettingsModal()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition">Închide</button>
-                    <button type="button" onclick="saveSettings()" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-lg transition">Salvează & Conectează</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
         let orders = [];
-        let apiKey = localStorage.getItem('jsonbin_key') || '';
-        let binId = localStorage.getItem('jsonbin_id') || '';
+        const apiKey = "$2a$10$b6UGrDZodyvQPc/dsJh3NunNzMz9VaJLu611IEWgRfiQkODIEMzbK";
+        const binId = "6af5a159ffd5d16053bbccdd";
 
-        document.getElementById('apiKeyInput').value = apiKey;
-        document.getElementById('binIdInput').value = binId;
+        // Pornire automată cu sincronizare din cloud
+        syncFromCloud();
 
-        if (apiKey && binId) {
-            syncFromCloud();
-        } else {
-            orders = JSON.parse(localStorage.getItem('cnc_orders')) || [];
-            document.getElementById('syncStatus').innerText = "Mod Local (fără cloud)";
-            renderApp();
+        function openModal() { 
+            document.getElementById('orderModal').classList.remove('hidden'); 
+            document.getElementById('orderModal').classList.add('flex'); 
         }
-
-        function openModal() { document.getElementById('orderModal').classList.remove('hidden'); document.getElementById('orderModal').classList.add('flex'); }
-        function closeModal() { document.getElementById('orderModal').classList.add('hidden'); document.getElementById('orderModal').classList.remove('flex'); }
-
-        function openSettingsModal() { document.getElementById('settingsModal').classList.remove('hidden'); document.getElementById('settingsModal').classList.add('flex'); }
-        function closeSettingsModal() { document.getElementById('settingsModal').classList.add('hidden'); document.getElementById('settingsModal').classList.remove('flex'); }
-
-        function saveSettings() {
-            apiKey = document.getElementById('apiKeyInput').value.trim();
-            binId = document.getElementById('binIdInput').value.trim();
-            localStorage.setItem('jsonbin_key', apiKey);
-            localStorage.setItem('jsonbin_id', binId);
-            closeSettingsModal();
-            if (apiKey) {
-                if (!binId) {
-                    createCloudBin();
-                } else {
-                    syncFromCloud();
-                }
-            }
-        }
-
-        async function createCloudBin() {
-            try {
-                document.getElementById('syncStatus').innerText = "Se creează baza de date în cloud...";
-                const response = await fetch('https://api.jsonbin.io/v3/b', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Master-Key': apiKey,
-                        'X-Bin-Private': 'true'
-                    },
-                    body: JSON.stringify({ orders: [] })
-                });
-                const data = await response.json();
-                if (data.metadata && data.metadata.id) {
-                    binId = data.metadata.id;
-                    localStorage.setItem('jsonbin_id', binId);
-                    document.getElementById('binIdInput').value = binId;
-                    alert("S-a creat cu succes Baza de date Cloud! Bin ID-ul este: " + binId);
-                    syncFromCloud();
-                } else {
-                    alert("Eroare la crearea bazei de date.");
-                }
-            } catch (err) {
-                alert("Eroare de conexiune: " + err.message);
-            }
+        
+        function closeModal() { 
+            document.getElementById('orderModal').classList.add('hidden'); 
+            document.getElementById('orderModal').classList.remove('flex'); 
         }
 
         async function syncToCloud() {
             localStorage.setItem('cnc_orders', JSON.stringify(orders));
-            if (!apiKey || !binId) return;
+            const statusEl = document.getElementById('syncStatus');
+            statusEl.innerText = "Se salvează în cloud...";
+            statusEl.className = "text-amber-400 font-semibold";
+            
             try {
-                await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -185,37 +117,45 @@
                     },
                     body: JSON.stringify({ orders: orders })
                 });
-                document.getElementById('syncStatus').innerText = "Sincronizat cu succes ✓";
-                document.getElementById('syncStatus').className = "text-emerald-400 font-semibold";
+                if (response.ok) {
+                    statusEl.innerText = "Sincronizat ✓";
+                    statusEl.className = "text-emerald-400 font-semibold";
+                } else {
+                    throw new Error("Eroare server");
+                }
             } catch (err) {
-                document.getElementById('syncStatus').innerText = "Eroare sincronizare!";
-                document.getElementById('syncStatus').className = "text-rose-500 font-semibold";
+                statusEl.innerText = "Eroare salvare cloud!";
+                statusEl.className = "text-rose-500 font-semibold";
             }
         }
 
         async function syncFromCloud() {
-            if (!apiKey || !binId) {
-                renderApp();
-                return;
-            }
+            const statusEl = document.getElementById('syncStatus');
+            statusEl.innerText = "Se descarcă datele...";
+            statusEl.className = "text-amber-400 font-semibold";
+            
             try {
-                document.getElementById('syncStatus').innerText = "Se descarcă datele...";
                 const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
                     headers: {
                         'X-Master-Key': apiKey
                     }
                 });
                 const data = await response.json();
-                if (data.record && data.record.orders) {
+                if (data.record && Array.isArray(data.record.orders)) {
                     orders = data.record.orders;
                     localStorage.setItem('cnc_orders', JSON.stringify(orders));
-                    document.getElementById('syncStatus').innerText = "Sincronizat cu succes ✓";
-                    document.getElementById('syncStatus').className = "text-emerald-400 font-semibold";
-                    renderApp();
+                    statusEl.innerText = "Sincronizat ✓";
+                    statusEl.className = "text-emerald-400 font-semibold";
+                } else {
+                    // Dacă bin-ul e nou și nu are cheia 'orders'
+                    orders = [];
+                    statusEl.innerText = "Conectat (Gol) ✓";
+                    statusEl.className = "text-emerald-400 font-semibold";
                 }
+                renderApp();
             } catch (err) {
-                document.getElementById('syncStatus').innerText = "Eroare preluare date!";
-                document.getElementById('syncStatus').className = "text-rose-500 font-semibold";
+                statusEl.innerText = "Offline (Date locale)";
+                statusEl.className = "text-rose-500 font-semibold";
                 orders = JSON.parse(localStorage.getItem('cnc_orders')) || [];
                 renderApp();
             }
