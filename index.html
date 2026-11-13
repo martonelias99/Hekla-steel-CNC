@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans p-4">
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-7xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-6 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-amber-400">🔥 Hekla Steel</h1>
@@ -33,7 +33,7 @@
                 <option value="">Toate statusurile</option>
                 <option value="netaiat">Netăiat</option>
                 <option value="taiat">Tăiat (Parțial / Total)</option>
-                <option value="livrat">Livrat</option>
+                <option value="livrat">Livrat (Parțial / Total)</option>
             </select>
         </div>
 
@@ -46,8 +46,9 @@
                         <th class="p-3">Grosime</th>
                         <th class="p-3">Marcă / Piese</th>
                         <th class="p-3 text-center">Tăiat / Necesar</th>
+                        <th class="p-3 text-center">Livrat / Necesar</th>
                         <th class="p-3 text-center">Status</th>
-                        <th class="p-3 text-right">Acțiuni la aparat</th>
+                        <th class="p-3 text-right">Acțiuni rapid / aparat</th>
                     </tr>
                 </thead>
                 <tbody id="ordersTableBody" class="divide-y divide-slate-700 text-sm">
@@ -89,7 +90,6 @@
         const apiKey = "$2a$10$b6UGrDZodyvQPc/dsJh3NunNzMz9VaJLu611IEWgRfiQkODIEMzbK";
         const binId = "6af5a159ffd5d16053bbccdd";
 
-        // Pornire automată cu sincronizare din cloud
         syncFromCloud();
 
         function openModal() { 
@@ -147,7 +147,6 @@
                     statusEl.innerText = "Sincronizat ✓";
                     statusEl.className = "text-emerald-400 font-semibold";
                 } else {
-                    // Dacă bin-ul e nou și nu are cheia 'orders'
                     orders = [];
                     statusEl.innerText = "Conectat (Gol) ✓";
                     statusEl.className = "text-emerald-400 font-semibold";
@@ -193,7 +192,7 @@
                     marca: marca,
                     necesar: cantitate,
                     taiat: 0,
-                    livrat: false
+                    livrat: 0
                 });
             });
 
@@ -220,12 +219,54 @@
             renderApp();
         }
 
-        function toggleDeliver(orderId, itemId) {
+        function promptCut(orderId, itemId, maxNecesar, currentTaiat) {
+            let input = prompt(`Introdu numărul de piese tăiate (Total necesar: ${maxNecesar}):`, currentTaiat);
+            if (input === null) return;
+            let val = parseInt(input);
+            if (isNaN(val)) return;
+            
             orders = orders.map(ord => {
                 if (ord.id === orderId) {
                     ord.items = ord.items.map(item => {
                         if (item.id === itemId) {
-                            item.livrat = !item.livrat;
+                            item.taiat = Math.max(0, Math.min(item.necesar, val));
+                        }
+                        return item;
+                    });
+                }
+                return ord;
+            });
+            syncToCloud();
+            renderApp();
+        }
+
+        function updateDeliver(orderId, itemId, delta) {
+            orders = orders.map(ord => {
+                if (ord.id === orderId) {
+                    ord.items = ord.items.map(item => {
+                        if (item.id === itemId) {
+                            item.livrat = Math.max(0, Math.min(item.necesar, item.livrat + delta));
+                        }
+                        return item;
+                    });
+                }
+                return ord;
+            });
+            syncToCloud();
+            renderApp();
+        }
+
+        function promptDeliver(orderId, itemId, maxNecesar, currentLivrat) {
+            let input = prompt(`Introdu numărul de piese livrate (Total necesar: ${maxNecesar}):`, currentLivrat);
+            if (input === null) return;
+            let val = parseInt(input);
+            if (isNaN(val)) return;
+            
+            orders = orders.map(ord => {
+                if (ord.id === orderId) {
+                    ord.items = ord.items.map(item => {
+                        if (item.id === itemId) {
+                            item.livrat = Math.max(0, Math.min(item.necesar, val));
                         }
                         return item;
                     });
@@ -261,18 +302,23 @@
                     const matchesThick = !thickVal || item.grosime === thickVal;
                     
                     let matchesStatus = true;
-                    if (statusVal === 'netaiat') matchesStatus = (item.taiat === 0 && !item.livrat);
+                    if (statusVal === 'netaiat') matchesStatus = (item.taiat === 0);
                     if (statusVal === 'taiat') matchesStatus = (item.taiat > 0);
-                    if (statusVal === 'livrat') matchesStatus = item.livrat;
+                    if (statusVal === 'livrat') matchesStatus = (item.livrat > 0);
 
                     if (!matchesSearch || !matchesThick || !matchesStatus) return;
 
                     hasRows = true;
 
-                    let statusBadge = `<span class="bg-rose-500/20 text-rose-400 px-2.5 py-1 rounded-full text-xs font-semibold">Netăiat</span>`;
-                    if (item.taiat > 0 && item.taiat < item.necesar) statusBadge = `<span class="bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full text-xs font-semibold">Parțial (${item.taiat}/${item.necesar})</span>`;
-                    if (item.taiat >= item.necesar) statusBadge = `<span class="bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full text-xs font-semibold">Tăiat Complet</span>`;
-                    if (item.livrat) statusBadge = `<span class="bg-blue-500/20 text-blue-400 px-2.5 py-1 rounded-full text-xs font-semibold">Livrat</span>`;
+                    // Badge Tăiat
+                    let cutBadge = `<span class="bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded-full text-xs font-semibold">Netăiat</span>`;
+                    if (item.taiat > 0 && item.taiat < item.necesar) cutBadge = `<span class="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-xs font-semibold">Parțial (${item.taiat})</span>`;
+                    if (item.taiat >= item.necesar) cutBadge = `<span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-xs font-semibold">Tăiat Complet</span>`;
+
+                    // Badge Livrat
+                    let deliverBadge = `<span class="bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full text-xs">Nelivrat</span>`;
+                    if (item.livrat > 0 && item.livrat < item.necesar) deliverBadge = `<span class="bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full text-xs font-semibold">Parțial (${item.livrat})</span>`;
+                    if (item.livrat >= item.necesar) deliverBadge = `<span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full text-xs font-semibold">Livrat Complet</span>`;
 
                     const tr = document.createElement('tr');
                     tr.className = "hover:bg-slate-750 transition";
@@ -283,17 +329,42 @@
                         </td>
                         <td class="p-3 font-mono text-amber-400 font-semibold">${item.grosime}</td>
                         <td class="p-3 font-medium">${item.marca}</td>
+                        
+                        <!-- Tăiat / Necesar + Butoane -->
                         <td class="p-3 text-center font-mono">
-                            <span class="${item.taiat >= item.necesar ? 'text-emerald-400 font-bold' : 'text-white'}">${item.taiat}</span> / ${item.necesar}
+                            <div class="flex items-center justify-center gap-1 mb-1">
+                                <span class="${item.taiat >= item.necesar ? 'text-emerald-400 font-bold' : 'text-white'}">${item.taiat}</span> / ${item.necesar}
+                            </div>
+                            <div class="flex items-center justify-center gap-1">
+                                <button onclick="updateCut(${ord.id}, ${item.id}, -1)" class="bg-slate-700 hover:bg-slate-600 text-white w-7 h-7 rounded text-xs font-bold">-1</button>
+                                <button onclick="updateCut(${ord.id}, ${item.id}, 1)" class="bg-slate-700 hover:bg-slate-600 text-white w-7 h-7 rounded text-xs font-bold">+1</button>
+                                <button onclick="promptCut(${ord.id}, ${item.id}, ${item.necesar}, ${item.taiat})" class="bg-slate-600 hover:bg-slate-500 text-amber-300 px-1.5 h-7 rounded text-xs font-bold" title="Setează manual cantitatea tăiată">+/-</button>
+                                <button onclick="updateCut(${ord.id}, ${item.id}, ${item.necesar - item.taiat})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 h-7 rounded text-xs font-semibold" title="Marchează toate tăiate">Toate</button>
+                            </div>
                         </td>
-                        <td class="p-3 text-center">${statusBadge}</td>
-                        <td class="p-3 text-right flex items-center justify-end gap-1.5">
-                            <button onclick="updateCut(${ord.id}, ${item.id}, -1)" class="bg-slate-700 hover:bg-slate-600 text-white w-8 h-8 rounded-lg font-bold text-sm">-1</button>
-                            <button onclick="updateCut(${ord.id}, ${item.id}, 1)" class="bg-slate-700 hover:bg-slate-600 text-white w-8 h-8 rounded-lg font-bold text-sm">+1</button>
-                            <button onclick="updateCut(${ord.id}, ${item.id}, ${item.necesar - item.taiat})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 h-8 rounded-lg text-xs font-semibold">Toate</button>
-                            <button onclick="toggleDeliver(${ord.id}, ${item.id})" class="ml-2 ${item.livrat ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-600'} text-white px-3 h-8 rounded-lg text-xs font-semibold transition">
-                                ${item.livrat ? 'Livrat ✓' : 'Livrare'}
-                            </button>
+
+                        <!-- Livrat / Necesar + Butoane -->
+                        <td class="p-3 text-center font-mono">
+                            <div class="flex items-center justify-center gap-1 mb-1">
+                                <span class="${item.livrat >= item.necesar ? 'text-blue-400 font-bold' : 'text-white'}">${item.livrat}</span> / ${item.necesar}
+                            </div>
+                            <div class="flex items-center justify-center gap-1">
+                                <button onclick="updateDeliver(${ord.id}, ${item.id}, -1)" class="bg-slate-700 hover:bg-slate-600 text-white w-7 h-7 rounded text-xs font-bold">-1</button>
+                                <button onclick="updateDeliver(${ord.id}, ${item.id}, 1)" class="bg-slate-700 hover:bg-slate-600 text-white w-7 h-7 rounded text-xs font-bold">+1</button>
+                                <button onclick="promptDeliver(${ord.id}, ${item.id}, ${item.necesar}, ${item.livrat})" class="bg-slate-600 hover:bg-slate-500 text-cyan-300 px-1.5 h-7 rounded text-xs font-bold" title="Setează manual cantitatea livrată">+/-</button>
+                                <button onclick="updateDeliver(${ord.id}, ${item.id}, ${item.necesar - item.livrat})" class="bg-blue-600 hover:bg-blue-700 text-white px-2 h-7 rounded text-xs font-semibold" title="Marchează toate livrate">Toate</button>
+                            </div>
+                        </td>
+
+                        <td class="p-3 text-center">
+                            <div class="flex flex-col gap-1 items-center">
+                                ${cutBadge}
+                                ${deliverBadge}
+                            </div>
+                        </td>
+
+                        <td class="p-3 text-right">
+                            <!-- Spațiu pentru acțiuni suplimentare dacă mai dorești -->
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -301,7 +372,7 @@
             });
 
             if (!hasRows) {
-                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-500">Nicio piesă găsită. Adaugă o comandă nouă.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-500">Nicio piesă găsită. Adaugă o comandă nouă.</td></tr>`;
             }
         }
     </script>
